@@ -171,7 +171,7 @@ with c3:
     plt.close(fig)
 
 with c4:
-    insight("📈", "Insight Visual", "Kurva membentuk distribusi *Bimodal* yang tajam. Terdapat dua puncak yang terpusat di jam komuter pagi (08.00) dan sore (17.00).", color="orange")
+    insight("📈", "Insight Visual", "Kurva membentuk distribusi Bimodal yang tajam. Terdapat dua puncak yang terpusat di jam komuter pagi (08.00) dan sore (17.00).", color="orange")
     
 
 st.markdown("---")
@@ -192,7 +192,7 @@ with c5:
     st.pyplot(fig); plt.close(fig)
 
 with c6:
-    insight("🛠️", "Insight Visual", "Terlihat penurunan aktivitas hingga membentuk titik terendah (zona mati) antara pukul 02:00 hingga 05:00 pagi.", color="purple")
+    insight("🛠️", "Insight Visual", "Terlihat penurunan aktivitas hingga membentuk titik terendah antara pukul 02:00 hingga 05:00 pagi.", color="purple")
 
 st.markdown("---")
 
