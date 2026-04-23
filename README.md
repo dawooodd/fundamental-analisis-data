@@ -44,8 +44,8 @@ Pastikan Anda sudah menginstal Python (disarankan versi 3.9 - 3.11).
 ### 2. Kloning Repositori (Opsional)
 Jika Anda belum mengunduh kode ini, lakukan kloning (clone) repositori:
 ```bash
-git clone https://github.com/dawooodd/Dashboard.git
-cd Dashboard
+git clone https://github.com/dawooodd/dashboard_speda.git
+cd dashboard_speda
 ```
 
 ### 3. Setup Virtual Environment (Disarankan)
