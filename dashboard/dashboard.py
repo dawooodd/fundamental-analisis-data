@@ -194,8 +194,8 @@ metric_mode = st.radio(
 
 c1, c2 = st.columns([1.3, 1])
 
-# Perhitungan statistik per cuaca
-weather_summary = hour_f.groupby('weathersit_label')['casual'].agg(['mean', 'sum', 'count']).reset_index()
+# Perhitungan statistik per cuaca secara aman
+weather_summary = hour_f.groupby('weathersit_label', observed=True)['casual'].agg(['mean', 'sum', 'count']).reset_index()
 
 with c1:
     fig, ax = plt.subplots(figsize=(8, 4.5))
@@ -207,6 +207,8 @@ with c1:
             estimator='mean', 
             errorbar=('ci', 95), 
             palette='Blues_r', 
+            hue='weathersit_label',
+            legend=False,
             ax=ax
         )
         ax.set_title('Rata-rata Penyewaan Kasual per Jam Berdasarkan Cuaca (CI 95%)', fontsize=12)
@@ -219,6 +221,8 @@ with c1:
             estimator=sum, 
             errorbar=None, 
             palette='Blues_r', 
+            hue='weathersit_label',
+            legend=False,
             ax=ax
         )
         ax.set_title('Total Akumulasi Penyewaan Kasual Berdasarkan Cuaca', fontsize=12)
@@ -231,19 +235,35 @@ with c1:
     plt.close(fig)
 
 with c2:
-    # Komputasi insight dinamis
+    # Komputasi insight dinamis dengan pengecekan aman (bebas IndexError)
     mean_clear = weather_summary.loc[weather_summary['weathersit_label'].str.contains("Cerah"), 'mean'].values
     mean_rain  = weather_summary.loc[weather_summary['weathersit_label'].str.contains("Hujan"), 'mean'].values
     mean_ext   = weather_summary.loc[weather_summary['weathersit_label'].str.contains("Ekstrem"), 'mean'].values
     count_ext  = weather_summary.loc[weather_summary['weathersit_label'].str.contains("Ekstrem"), 'count'].values
     
     val_clear = mean_clear[0] if len(mean_clear) > 0 else 0
-    val_rain  = mean_rain[0] if len(mean_rain) > 0 else 0
-    drop_pct  = ((val_clear - val_rain) / val_clear * 100) if val_clear > 0 else 0
+    val_rain  = mean_rain[0] if len(mean_rain) > 0 else None
+    val_ext   = mean_ext[0] if len(mean_ext) > 0 else None
+    cnt_ext   = int(count_ext[0]) if len(count_ext) > 0 else 0
+    
+    # Narasi penurunan sewa hujan
+    if val_rain is not None and val_clear > 0:
+        drop_pct = ((val_clear - val_rain) / val_clear) * 100
+        rain_narrative = f"Rata-rata sewa kasual turun dari <b>{val_clear:.1f} sewa/jam</b> (Cerah) ke <b>{val_rain:.1f} sewa/jam</b> saat Hujan Ringan (penurunan <b>-{drop_pct:.1f}%</b>)."
+    elif val_clear > 0:
+        rain_narrative = f"Rata-rata sewa kasual tercatat <b>{val_clear:.1f} sewa/jam</b> pada kondisi cuaca Cerah."
+    else:
+        rain_narrative = "Data penyewaan kasual pada kondisi cerah tidak tersedia pada filter aktif."
+
+    # Narasi cuaca ekstrem yang adaptif (mencegah IndexError jika cuaca level 4 tidak ada pada musim aktif)
+    if cnt_ext > 0 and val_ext is not None:
+        ext_narrative = f"Cuaca ekstrem level 4 hanya terjadi selama <b>{cnt_ext} jam</b> pada subset data ini dengan laju rata-rata riil <b>{val_ext:.1f} sewa/jam</b>. Mengukur dari total volume menghasilkan ilusi kejatuhan 99.9% (Base Rate Fallacy)."
+    else:
+        ext_narrative = "Kondisi cuaca ekstrem (level 4) <b>tidak terjadi</b> sama sekali pada musim/rentang tanggal yang dipilih, sehingga tidak ada dampak cuaca ekstrem pada filter ini."
     
     insight_text = f"""
-    * <b>Penurunan Laju per Jam:</b> Rata-rata sewa kasual turun dari <b>{val_clear:.1f} sewa/jam</b> (Cerah) ke <b>{val_rain:.1f} sewa/jam</b> saat Hujan Ringan (penurunan <b>-{drop_pct:.1f}%</b>).
-    * <b>Mitigasi Bias Cuaca Ekstrem:</b> Cuaca ekstrem level 4 hanya terjadi selama <b>{int(count_ext[0]) if len(count_ext)>0 else 0} jam</b> dalam data ini. Mengukur dari total volume menghasilkan ilusi kejatuhan 99.9% (Base Rate Fallacy), sedangkan laju per jam riil adalah <b>{mean_ext[0]:.1f} sewa/jam</b>.
+    * <b>Sensitivitas Cuaca:</b> {rain_narrative}
+    * <b>Mitigasi Bias Cuaca Ekstrem:</b> {ext_narrative}
     * <b>Rekomendasi Aksi:</b> Terapkan <i>Weather-Triggered Dynamic Pricing</i> (diskon otomatis 20-30% saat hujan ringan) untuk merangsang permintaan elastis pengguna kasual.
     """
     insight("🌦️", "Wawasan Data & Rekomendasi Bisnis", insight_text, color="blue")
@@ -277,9 +297,9 @@ with c3:
 
 with c4:
     if not df_work.empty:
-        hr_stats = df_work.groupby('hr')['cnt'].mean()
-        morning_peak = hr_stats.loc[7:9].max() if len(hr_stats.loc[7:9]) > 0 else 0
-        evening_peak = hr_stats.loc[17:18].max() if len(hr_stats.loc[17:18]) > 0 else 0
+        hr_stats = df_work.groupby('hr')['cnt'].mean().reindex(range(24), fill_value=0)
+        morning_peak = hr_stats.loc[7:9].max() if len(hr_stats.loc[7:9]) > 0 else hr_stats.max()
+        evening_peak = hr_stats.loc[17:18].max() if len(hr_stats.loc[17:18]) > 0 else hr_stats.max()
         
         q2_text = f"""
         * <b>Distribusi Bimodal:</b> Terlihat dua puncak tajam yang mencerminkan mobilitas pekerja kantoran.
@@ -304,7 +324,16 @@ df_early = hour_f[hour_f['hr'].isin([0, 1, 2, 3, 4, 5, 6])]
 with c5:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     if not df_early.empty:
-        sns.barplot(x='hr', y='cnt', data=df_early, estimator='mean', palette='mako', ax=ax)
+        sns.barplot(
+            x='hr', 
+            y='cnt', 
+            data=df_early, 
+            estimator='mean', 
+            palette='mako', 
+            hue='hr',
+            legend=False,
+            ax=ax
+        )
         ax.set_title('Rata-rata Penyewaan pada Dini Hari (00:00 - 06:00)', fontsize=12)
         ax.set_xlabel('Jam Dini Hari')
         ax.set_ylabel('Rata-rata Penyewaan (unit)')
@@ -316,17 +345,20 @@ with c5:
 
 with c6:
     if not df_early.empty:
-        early_stats = df_early.groupby('hr')['cnt'].mean()
-        min_hr = early_stats.idxmin()
-        min_val = early_stats.min()
-        
-        q3_text = f"""
-        * <b>Titik Terendah (Nadir):</b> Aktivitas armada berada di titik paling rendah pada pukul <b>{min_hr:02d}:00</b> dengan rata-rata hanya <b>{min_val:.1f} unit/jam</b>.
-        * <b>Zona Inaktif (02:00 - 05:00):</b> Selama rentang 3 jam ini, lebih dari 98% sepeda berada dalam kondisi diam (*docked/idle*).
-        * <b>Rekomendasi Aksi:</b> Tetapkan shift teknisi lapangan eksklusif pada pukul <b>02:00 - 05:00</b> untuk inspeksi rem, rantai, dan kebersihan. Menghindari pemeliharaan siang hari akan menjaga ketersediaan armada 100% saat jam sibuk.
-        """
+        early_stats = df_early.groupby('hr')['cnt'].mean().dropna()
+        if not early_stats.empty:
+            min_hr = early_stats.idxmin()
+            min_val = early_stats.min()
+            
+            q3_text = f"""
+            * <b>Titik Terendah (Nadir):</b> Aktivitas armada berada di titik paling rendah pada pukul <b>{min_hr:02d}:00</b> dengan rata-rata hanya <b>{min_val:.1f} unit/jam</b>.
+            * <b>Zona Inaktif (02:00 - 05:00):</b> Selama rentang 3 jam ini, lebih dari 98% sepeda berada dalam kondisi diam (*docked/idle*).
+            * <b>Rekomendasi Aksi:</b> Tetapkan shift teknisi lapangan eksklusif pada pukul <b>02:00 - 05:00</b> untuk inspeksi rem, rantai, dan kebersihan. Menghindari pemeliharaan siang hari akan menjaga ketersediaan armada 100% saat jam sibuk.
+            """
+        else:
+            q3_text = "Data jam dini hari tidak mencukupi untuk menghitung jadwal pemeliharaan."
     else:
-        q3_text = "Data tidak mencukupi untuk menghitung jadwal maintenance."
+        q3_text = "Data jam dini hari tidak tersedia pada pilihan filter saat ini."
     insight("🛠️", "Jadwal Efisiensi Armada", q3_text, color="purple")
 
 st.markdown("---")
@@ -337,6 +369,12 @@ st.markdown("---")
 st.subheader("4. Perbandingan Karakteristik Pengguna: Hari Kerja vs Akhir Pekan")
 c7, c8 = st.columns([1.3, 1])
 
+# Mapping palet warna eksplisit untuk mencegah color mismatch jika hanya 1 kategori yang muncul
+palette_day = {
+    "Hari Kerja": "#E63946",
+    "Akhir Pekan/Libur": "#457B9D"
+}
+
 with c7:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     sns.lineplot(
@@ -345,7 +383,7 @@ with c7:
         hue='workingday_label', 
         data=hour_f, 
         estimator='mean', 
-        palette=['#457B9D', '#E63946'], 
+        palette=palette_day, 
         linewidth=2.5, 
         ax=ax
     )
@@ -376,6 +414,11 @@ st.markdown("---")
 st.subheader("5. Tren Pertumbuhan Bulanan & Ekspansi YoY (2011 vs 2012)")
 c9, c10 = st.columns([1.3, 1])
 
+palette_yr = {
+    "2011": "#4C9BE8",
+    "2012": "#2EC4B6"
+}
+
 with c9:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     sns.barplot(
@@ -384,7 +427,7 @@ with c9:
         hue='yr_label', 
         data=day_f, 
         estimator=sum, 
-        palette=['#4C9BE8', '#2EC4B6'], 
+        palette=palette_yr, 
         ax=ax
     )
     ax.set_title('Total Penyewaan Sepeda per Bulan: 2011 vs 2012', fontsize=12)
@@ -402,12 +445,16 @@ with c10:
     
     if sum_2011 > 0 and sum_2012 > 0:
         yoy_growth = ((sum_2012 - sum_2011) / sum_2011) * 100
-        growth_metric = f"+{yoy_growth:.1f}%"
+        growth_info = f"Total volume naik dari <b>{int(sum_2011):,}</b> (2011) menjadi <b>{int(sum_2012):,}</b> (2012), mencatat ekspansi sebesar <b>+{yoy_growth:.1f}%</b>."
+    elif sum_2011 > 0:
+        growth_info = f"Data terfilter hanya mencakup tahun 2011 dengan total penyewaan sebanyak <b>{int(sum_2011):,} unit</b>."
+    elif sum_2012 > 0:
+        growth_info = f"Data terfilter hanya mencakup tahun 2012 dengan total penyewaan sebanyak <b>{int(sum_2012):,} unit</b>."
     else:
-        growth_metric = "Data tahun tunggal"
+        growth_info = "Tidak ada volume penyewaan pada periode filter terpilih."
         
     q5_text = f"""
-    * <b>Pertumbuhan YoY Terfilter:</b> Total volume naik dari <b>{int(sum_2011):,}</b> (2011) menjadi <b>{int(sum_2012):,}</b> (2012), mencatat ekspansi sebesar <b>{growth_metric}</b>.
+    * <b>Pertumbuhan Terfilter:</b> {growth_info}
     * <b>Konsistensi Pola:</b> Tanpa defisit di bulan mana pun, pertumbuhan terakselerasi signifikan pada bulan Mei hingga September (*Summer Peak Season*).
     * <b>Rekomendasi Capex:</b> Mengingat pertumbuhan organik yang sangat tinggi (+64.8% agregat tahunan), perusahaan disarankan meningkatkan alokasi belanja modal (*Capex*) penambahan armada minimal 30-40% menyambut kuartal kedua tahun berikutnya.
     """
@@ -423,7 +470,15 @@ with st.expander("🔍 Analisis Lanjutan: Distribusi Penggunaan Berdasarkan Kate
     tc1, tc2 = st.columns([1.2, 1])
     with tc1:
         fig, ax = plt.subplots(figsize=(7, 3.5))
-        sns.barplot(x='Total Penyewaan', y='Kategori Waktu', data=time_agg, palette='viridis', ax=ax)
+        sns.barplot(
+            x='Total Penyewaan', 
+            y='Kategori Waktu', 
+            data=time_agg, 
+            palette='viridis', 
+            hue='Kategori Waktu',
+            legend=False,
+            ax=ax
+        )
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
         ax.set_title("Total Sewa Berdasarkan Kategori Waktu", fontsize=11)
         st.pyplot(fig)
