@@ -142,7 +142,7 @@ def apply_filters(df, season_filter, date_range):
             d = d[(d["dteday"].dt.date >= start_date) & (d["dteday"].dt.date <= end_date)]
         elif len(date_range) == 1:
             d = d[d["dteday"].dt.date == date_range[0]]
-            st.sidebar.caption("💡 Pilih tanggal kedua untuk rentang penuh.")
+            st.sidebar.caption("💡 Klik tanggal kedua untuk rentang penuh.")
     return d
 
 # Terapkan filter ke KEDUA dataframe
@@ -194,9 +194,6 @@ metric_mode = st.radio(
 
 c1, c2 = st.columns([1.3, 1])
 
-# Perhitungan statistik per cuaca secara aman
-weather_summary = hour_f.groupby('weathersit_label', observed=True)['casual'].agg(['mean', 'sum', 'count']).reset_index()
-
 with c1:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     if "Rata-rata" in metric_mode:
@@ -235,16 +232,19 @@ with c1:
     plt.close(fig)
 
 with c2:
-    # Komputasi insight dinamis dengan pengecekan aman (bebas IndexError)
-    mean_clear = weather_summary.loc[weather_summary['weathersit_label'].str.contains("Cerah"), 'mean'].values
-    mean_rain  = weather_summary.loc[weather_summary['weathersit_label'].str.contains("Hujan"), 'mean'].values
-    mean_ext   = weather_summary.loc[weather_summary['weathersit_label'].str.contains("Ekstrem"), 'mean'].values
-    count_ext  = weather_summary.loc[weather_summary['weathersit_label'].str.contains("Ekstrem"), 'count'].values
+    # Komputasi statistik deskriptif per cuaca secara idiomatis dan aman
+    weather_stats = hour_f.groupby('weathersit_label', observed=True)['casual'].agg(
+        mean='mean', count='count'
+    )
     
-    val_clear = mean_clear[0] if len(mean_clear) > 0 else 0
-    val_rain  = mean_rain[0] if len(mean_rain) > 0 else None
-    val_ext   = mean_ext[0] if len(mean_ext) > 0 else None
-    cnt_ext   = int(count_ext[0]) if len(count_ext) > 0 else 0
+    clear_row = weather_stats[weather_stats.index.str.contains("Cerah")]
+    rain_row  = weather_stats[weather_stats.index.str.contains("Hujan")]
+    ext_row   = weather_stats[weather_stats.index.str.contains("Ekstrem")]
+    
+    val_clear = float(clear_row['mean'].iloc[0]) if not clear_row.empty else 0.0
+    val_rain  = float(rain_row['mean'].iloc[0]) if not rain_row.empty else None
+    val_ext   = float(ext_row['mean'].iloc[0]) if not ext_row.empty else None
+    cnt_ext   = int(ext_row['count'].iloc[0]) if not ext_row.empty else 0
     
     # Narasi penurunan sewa hujan
     if val_rain is not None and val_clear > 0:
@@ -255,7 +255,7 @@ with c2:
     else:
         rain_narrative = "Data penyewaan kasual pada kondisi cerah tidak tersedia pada filter aktif."
 
-    # Narasi cuaca ekstrem yang adaptif (mencegah IndexError jika cuaca level 4 tidak ada pada musim aktif)
+    # Narasi cuaca ekstrem adaptif (bebas dari risiko IndexError jika cuaca level 4 absen)
     if cnt_ext > 0 and val_ext is not None:
         ext_narrative = f"Cuaca ekstrem level 4 hanya terjadi selama <b>{cnt_ext} jam</b> pada subset data ini dengan laju rata-rata riil <b>{val_ext:.1f} sewa/jam</b>. Mengukur dari total volume menghasilkan ilusi kejatuhan 99.9% (Base Rate Fallacy)."
     else:
@@ -369,7 +369,6 @@ st.markdown("---")
 st.subheader("4. Perbandingan Karakteristik Pengguna: Hari Kerja vs Akhir Pekan")
 c7, c8 = st.columns([1.3, 1])
 
-# Mapping palet warna eksplisit untuk mencegah color mismatch jika hanya 1 kategori yang muncul
 palette_day = {
     "Hari Kerja": "#E63946",
     "Akhir Pekan/Libur": "#457B9D"
